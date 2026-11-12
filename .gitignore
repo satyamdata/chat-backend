@@ -1,0 +1,9 @@
+firebase-service-key.json
+firebase-service-key.json.json
+node_modules
+.env
+dist/
+src/*.js
+src/*.d.ts
+src/*.js.map
+src/*.d.ts.map
