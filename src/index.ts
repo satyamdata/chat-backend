@@ -173,6 +173,109 @@ app.get('/user/:userId/chats', async (req: Request, res: Response) => {
     }
 });
 
+// ==========================================
+// 7. BONUS: Create Group Chat (POST /group/create) [MySQL]
+// ==========================================
+app.post('/group/create', async (req: Request, res: Response) => {
+    try {
+        const { name, createdBy, memberIds } = req.body;
+        if (!name || !createdBy || !memberIds) {
+            return res.status(400).json({ error: 'name, createdBy, and memberIds are required' });
+        }
+
+        const [groupResult]: any = await pool.query(
+            `INSERT INTO groups (name, created_by) VALUES (?, ?)`,
+            [name, createdBy]
+        );
+        const groupId = groupResult.insertId;
+
+        const allMembers = [...new Set([...memberIds, createdBy])];
+        const values = allMembers.map((userId) => [groupId, userId]);
+
+        await pool.query(
+            `INSERT INTO group_members (group_id, user_id) VALUES ?`,
+            [values]
+        );
+
+        return res.status(201).json({ groupId: groupId.toString(), name, members: allMembers });
+    } catch (error) {
+        console.error('Error creating group:', error);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// ==========================================
+// 8. BONUS: Edit Message (PATCH /chat/:chatId/message/:messageId) [Firestore]
+// ==========================================
+app.patch('/chat/:chatId/message/:messageId', async (req: Request, res: Response) => {
+    try {
+        const { chatId, messageId } = req.params;
+        const { userId, newText } = req.body;
+
+        if (!userId || !newText) {
+            return res.status(400).json({ error: 'userId and newText are required' });
+        }
+
+        const msgRef = db.collection('chats').doc(chatId).collection('messages').doc(messageId);
+        const doc = await msgRef.get();
+
+        if (!doc.exists) {
+            return res.status(404).json({ error: 'Message not found' });
+        }
+
+        if (doc.data()?.senderId !== userId) {
+            return res.status(403).json({ error: 'Unauthorized to edit this message' });
+        }
+
+        await msgRef.update({
+            text: newText,
+            edited: true,
+            updatedAt: FieldValue.serverTimestamp()
+        });
+
+        return res.json({ success: true, message: 'Message updated successfully' });
+    } catch (error) {
+        console.error('Error editing message:', error);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// ==========================================
+// 9. BONUS: Delete Message (DELETE /chat/:chatId/message/:messageId) [Firestore]
+// ==========================================
+app.delete('/chat/:chatId/message/:messageId', async (req: Request, res: Response) => {
+    try {
+        const { chatId, messageId } = req.params;
+        const { userId } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ error: 'userId is required' });
+        }
+
+        const msgRef = db.collection('chats').doc(chatId).collection('messages').doc(messageId);
+        const doc = await msgRef.get();
+
+        if (!doc.exists) {
+            return res.status(404).json({ error: 'Message not found' });
+        }
+
+        if (doc.data()?.senderId !== userId) {
+            return res.status(403).json({ error: 'Unauthorized to delete this message' });
+        }
+
+        // Soft delete
+        await msgRef.update({
+            text: '🚫 This message was deleted',
+            isDeleted: true
+        });
+
+        return res.json({ success: true, message: 'Message deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting message:', error);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 // Server Start
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
